@@ -1,0 +1,40 @@
+{
+  "upgrades": {
+    "Bubbles": {
+      "baseCost": 50,
+      "benefit": 0.02,
+      "maxLevel": 175,
+      "description": "Increases chance to catch rare fish"
+    },
+    "Bubble Breakthrough": {
+      "baseCost": 100,
+      "benefit": 0.10,
+      "maxLevel": 90,
+      "description": "Increases damage per bubble pop"
+    },
+    "Bubble Boost": {
+      "baseCost": 250,
+      "benefit": 0.02,
+      "maxLevel": 120,
+      "description": "Increases bubble spawn rate"
+    },
+    "More Bubbles": {
+      "baseCost": 2000,
+      "benefit": 1,
+      "maxLevel": 45,
+      "description": "Increases maximum bubbles"
+    },
+    "Bubble Bonanza": {
+      "baseCost": 5000,
+      "benefit": 0.05,
+      "maxLevel": 25,
+      "description": "Chance for double bubble spawn"
+    },
+    "Golden Bubbles": {
+      "baseCost": 10000,
+      "benefit": 0.15,
+      "maxLevel": 20,
+      "description": "Increases money from bubbles"
+    }
+  }
+}
