@@ -8,13 +8,6 @@ class BubbaOptimizer {
         this.recommendation = null;
         this.ignoredRecommendations = new Set();
         
-        // Initialize toastr
-        toastr.options = {
-            positionClass: 'toast-top-right',
-            progressBar: true,
-            timeOut: 3000
-        };
-        
         this.init();
     }
 
@@ -22,13 +15,14 @@ class BubbaOptimizer {
         this.showLoading();
         
         try {
-            // Try to load data from Google Sheets using proxy
+            // Try to load data from Google Sheets
             await this.loadFromGoogleSheets();
         } catch (error) {
             console.error('Failed to load from Google Sheets:', error);
             
-            // Use built-in sample data that matches your sheet
+            // Use built-in sample data
             await this.loadSampleData();
+            this.showNotification('Using sample data. Click "Load from Google Sheets" to try again.', 'info');
         }
         
         // Load saved state
@@ -43,13 +37,31 @@ class BubbaOptimizer {
         this.hideLoading();
     }
 
+    showNotification(message, type = 'info') {
+        const container = document.getElementById('notification-container');
+        if (!container) return;
+        
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.textContent = message;
+        
+        container.appendChild(notification);
+        
+        // Remove after 3 seconds
+        setTimeout(() => {
+            if (notification.parentNode === container) {
+                container.removeChild(notification);
+            }
+        }, 3000);
+    }
+
     async loadFromGoogleSheets() {
-        // Using CORS proxy to avoid CORS issues
+        // Your Google Sheets CSV URL
         const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTV0t6SXTEs2ndKMVlnBssVfGQEIKZB-F5mDzLN3u7FLrOcWuslmlxITJ0T3_VONJzy7GsBi9ARQbEF/pub?output=csv';
-        const proxyUrl = 'https://cors-anywhere.herokuapp.com/'; // CORS proxy
         
         try {
-            const response = await fetch(proxyUrl + csvUrl);
+            // Try direct fetch
+            const response = await fetch(csvUrl);
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -62,64 +74,35 @@ class BubbaOptimizer {
             }
             
             this.parseCSV(csvText);
-            toastr.success('Data loaded from Google Sheets');
+            this.showNotification('Data loaded from Google Sheets', 'success');
             
         } catch (error) {
-            console.warn('CORS proxy failed, trying direct fetch:', error);
-            
-            // Try direct fetch as fallback
-            try {
-                const response = await fetch(csvUrl);
-                const csvText = await response.text();
-                this.parseCSV(csvText);
-                toastr.success('Data loaded from Google Sheets');
-            } catch (directError) {
-                console.warn('Direct fetch also failed:', directError);
-                throw new Error('Failed to load from Google Sheets');
-            }
+            console.warn('Failed to load from Google Sheets:', error);
+            throw error;
         }
     }
 
     parseCSV(csvText) {
-        // Clean and parse CSV
         const rows = csvText.split('\n')
             .map(row => row.trim())
-            .filter(row => row && !row.startsWith('//') && row !== 'Upgrade,Base Cost,DPS Increase,Max Level,Description');
+            .filter(row => row && !row.startsWith('//'));
         
-        if (rows.length === 0) {
-            throw new Error('No valid data in CSV');
+        console.log('CSV rows to parse:', rows);
+        
+        // Skip header row if it exists
+        let startIndex = 0;
+        if (rows[0] && rows[0].includes('Upgrade') && rows[0].includes('Base Cost')) {
+            startIndex = 1;
         }
         
-        console.log('CSV rows to parse:', rows.length);
-        
-        // Parse each row
-        rows.forEach((row, index) => {
-            // Handle CSV with quotes and commas
-            let cells = [];
-            let currentCell = '';
-            let insideQuotes = false;
+        for (let i = startIndex; i < rows.length; i++) {
+            const row = rows[i];
+            // Simple CSV parsing - split by comma
+            const cells = row.split(',').map(cell => cell.trim().replace(/"/g, ''));
             
-            for (let i = 0; i < row.length; i++) {
-                const char = row[i];
-                
-                if (char === '"') {
-                    insideQuotes = !insideQuotes;
-                } else if (char === ',' && !insideQuotes) {
-                    cells.push(currentCell.trim());
-                    currentCell = '';
-                } else {
-                    currentCell += char;
-                }
-            }
-            cells.push(currentCell.trim());
-            
-            // Remove quotes from cells
-            cells = cells.map(cell => cell.replace(/^"|"$/g, ''));
-            
-            // Expecting: Name, Base Cost, DPS, Max Level, Description
-            if (cells.length >= 4) {
+            if (cells.length >= 3) {
                 const name = cells[0];
-                const baseCost = parseFloat(cells[1].replace(/[^0-9.]/g, '')) || 0;
+                const baseCost = parseFloat(cells[1]) || 0;
                 const dps = parseFloat(cells[2]) || 0;
                 const maxLevel = parseInt(cells[3]) || 100;
                 const description = cells[4] || '';
@@ -139,13 +122,13 @@ class BubbaOptimizer {
                     }
                 }
             }
-        });
+        }
         
         console.log('Parsed upgrades:', this.upgrades);
     }
 
     async loadSampleData() {
-        // Sample data that should match your sheet
+        // Sample data based on typical Bubba upgrades
         this.upgrades = {
             "Bubbles": {
                 baseCost: 50,
@@ -209,27 +192,6 @@ class BubbaOptimizer {
                 maxLevel: 30,
                 description: "Extra money from popped bubbles",
                 category: "money"
-            },
-            "Super Bubbles": {
-                baseCost: 100000,
-                dps: 5.00,
-                maxLevel: 10,
-                description: "Massive DPS increase",
-                category: "damage"
-            },
-            "Bubble Chain": {
-                baseCost: 15000,
-                dps: 0.50,
-                maxLevel: 25,
-                description: "Chance for chain reactions",
-                category: "special"
-            },
-            "Lucky Bubbles": {
-                baseCost: 7500,
-                dps: 0.08,
-                maxLevel: 40,
-                description: "Increased rare bubble chance",
-                category: "special"
             }
         };
         
@@ -241,7 +203,6 @@ class BubbaOptimizer {
         });
         
         console.log('Loaded sample data');
-        toastr.info('Using sample data. Click "Load from Google Sheets" to try again.');
     }
 
     determineCategory(upgradeName) {
@@ -268,7 +229,8 @@ class BubbaOptimizer {
             
             if (savedMoney) {
                 this.availableMoney = parseInt(savedMoney);
-                document.getElementById('moneyInput').value = this.availableMoney;
+                const moneyInput = document.getElementById('moneyInput');
+                if (moneyInput) moneyInput.value = this.availableMoney;
             }
             
             if (savedStrategy) {
@@ -293,11 +255,14 @@ class BubbaOptimizer {
 
     setupEventListeners() {
         // Money input
-        document.getElementById('moneyInput').addEventListener('input', (e) => {
-            this.availableMoney = parseInt(e.target.value) || 0;
-            this.saveToStorage();
-            this.findBestUpgrade();
-        });
+        const moneyInput = document.getElementById('moneyInput');
+        if (moneyInput) {
+            moneyInput.addEventListener('input', (e) => {
+                this.availableMoney = parseInt(e.target.value) || 0;
+                this.saveToStorage();
+                this.findBestUpgrade();
+            });
+        }
 
         // Strategy selection
         document.querySelectorAll('input[name="strategy"]').forEach(radio => {
@@ -309,75 +274,107 @@ class BubbaOptimizer {
         });
 
         // Calculate button
-        document.getElementById('calculateBtn').addEventListener('click', () => {
-            this.findBestUpgrade();
-            toastr.info('Recalculated best upgrades');
-        });
+        const calculateBtn = document.getElementById('calculateBtn');
+        if (calculateBtn) {
+            calculateBtn.addEventListener('click', () => {
+                this.findBestUpgrade();
+                this.showNotification('Recalculated best upgrades', 'info');
+            });
+        }
 
         // Reset button
-        document.getElementById('resetBtn').addEventListener('click', () => {
-            if (confirm('Reset all levels to 0?')) {
-                Object.keys(this.levels).forEach(name => {
-                    this.levels[name] = 0;
-                });
-                this.renderTable();
-                this.calculateDps();
-                this.findBestUpgrade();
-                this.saveToStorage();
-                toastr.success('All levels reset to 0');
-            }
-        });
+        const resetBtn = document.getElementById('resetBtn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                if (confirm('Reset all levels to 0?')) {
+                    Object.keys(this.levels).forEach(name => {
+                        this.levels[name] = 0;
+                    });
+                    this.renderTable();
+                    this.calculateDps();
+                    this.findBestUpgrade();
+                    this.saveToStorage();
+                    this.showNotification('All levels reset to 0', 'success');
+                }
+            });
+        }
 
         // Export button
-        document.getElementById('exportBtn').addEventListener('click', () => {
-            this.exportData();
-        });
+        const exportBtn = document.getElementById('exportBtn');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => {
+                this.exportData();
+            });
+        }
 
         // Import button
-        document.getElementById('importBtn').addEventListener('click', () => {
-            document.querySelector('.tab-btn[data-tab="import"]').click();
-        });
+        const importBtn = document.getElementById('importBtn');
+        if (importBtn) {
+            importBtn.addEventListener('click', () => {
+                const importTab = document.querySelector('.tab-btn[data-tab="import"]');
+                if (importTab) importTab.click();
+            });
+        }
 
         // Load JSON button
-        document.getElementById('loadJsonBtn').addEventListener('click', () => {
-            this.importFromJson();
-        });
+        const loadJsonBtn = document.getElementById('loadJsonBtn');
+        if (loadJsonBtn) {
+            loadJsonBtn.addEventListener('click', () => {
+                this.importFromJson();
+            });
+        }
 
-        // Load file button - fix this
-        document.getElementById('loadFileBtn').addEventListener('click', () => {
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            fileInput.accept = '.json';
-            fileInput.onchange = (e) => {
-                if (e.target.files.length > 0) {
-                    this.loadFromFile(e.target.files[0]);
-                }
-            };
-            fileInput.click();
-        });
+        // Load file button
+        const loadFileBtn = document.getElementById('loadFileBtn');
+        if (loadFileBtn) {
+            loadFileBtn.addEventListener('click', () => {
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = '.json';
+                fileInput.onchange = (e) => {
+                    if (e.target.files.length > 0) {
+                        this.loadFromFile(e.target.files[0]);
+                    }
+                };
+                fileInput.click();
+            });
+        }
 
         // Clear JSON button
-        document.getElementById('clearJsonBtn').addEventListener('click', () => {
-            document.getElementById('jsonInput').value = '';
-        });
+        const clearJsonBtn = document.getElementById('clearJsonBtn');
+        if (clearJsonBtn) {
+            clearJsonBtn.addEventListener('click', () => {
+                const jsonInput = document.getElementById('jsonInput');
+                if (jsonInput) jsonInput.value = '';
+            });
+        }
 
         // Copy JSON button
-        document.getElementById('copyJsonBtn').addEventListener('click', () => {
-            this.copyToClipboard();
-        });
+        const copyJsonBtn = document.getElementById('copyJsonBtn');
+        if (copyJsonBtn) {
+            copyJsonBtn.addEventListener('click', () => {
+                this.copyToClipboard();
+            });
+        }
 
         // Save JSON button
-        document.getElementById('saveJsonBtn').addEventListener('click', () => {
-            this.downloadJson();
-        });
+        const saveJsonBtn = document.getElementById('saveJsonBtn');
+        if (saveJsonBtn) {
+            saveJsonBtn.addEventListener('click', () => {
+                this.downloadJson();
+            });
+        }
 
         // Clear all button
-        document.getElementById('clearAllBtn').addEventListener('click', () => {
-            if (confirm('Clear all data including saved progress?')) {
-                localStorage.clear();
-                location.reload();
-            }
-        });
+        const clearAllBtn = document.getElementById('clearAllBtn');
+        if (clearAllBtn) {
+            clearAllBtn.addEventListener('click', () => {
+                if (confirm('Clear all data including saved progress?')) {
+                    localStorage.clear();
+                    location.reload();
+                }
+            });
+        }
 
         // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -392,7 +389,8 @@ class BubbaOptimizer {
                 document.querySelectorAll('.tab-content').forEach(content => {
                     content.classList.remove('active');
                 });
-                document.getElementById(`${tab}Tab`).classList.add('active');
+                const tabContent = document.getElementById(`${tab}Tab`);
+                if (tabContent) tabContent.classList.add('active');
                 
                 // Update export preview
                 if (tab === 'export') {
@@ -402,58 +400,85 @@ class BubbaOptimizer {
         });
 
         // Help button
-        document.getElementById('helpBtn').addEventListener('click', () => {
-            document.getElementById('helpModal').style.display = 'flex';
-        });
+        const helpBtn = document.getElementById('helpBtn');
+        if (helpBtn) {
+            helpBtn.addEventListener('click', () => {
+                const modal = document.getElementById('helpModal');
+                if (modal) modal.style.display = 'flex';
+            });
+        }
 
         // Modal close
-        document.querySelector('.modal-close').addEventListener('click', () => {
-            document.getElementById('helpModal').style.display = 'none';
-        });
+        const modalClose = document.querySelector('.modal-close');
+        if (modalClose) {
+            modalClose.addEventListener('click', () => {
+                const modal = document.getElementById('helpModal');
+                if (modal) modal.style.display = 'none';
+            });
+        }
 
         // Close modal when clicking outside
         window.addEventListener('click', (e) => {
             if (e.target.id === 'helpModal') {
-                document.getElementById('helpModal').style.display = 'none';
+                const modal = document.getElementById('helpModal');
+                if (modal) modal.style.display = 'none';
             }
         });
 
         // Filters
-        document.getElementById('filterAffordable').addEventListener('change', () => {
-            this.renderTable();
-        });
+        const filterAffordable = document.getElementById('filterAffordable');
+        if (filterAffordable) {
+            filterAffordable.addEventListener('change', () => {
+                this.renderTable();
+            });
+        }
 
-        document.getElementById('filterMaxLevel').addEventListener('change', () => {
-            this.renderTable();
-        });
+        const filterMaxLevel = document.getElementById('filterMaxLevel');
+        if (filterMaxLevel) {
+            filterMaxLevel.addEventListener('change', () => {
+                this.renderTable();
+            });
+        }
 
-        document.getElementById('searchInput').addEventListener('input', () => {
-            this.renderTable();
-        });
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                this.renderTable();
+            });
+        }
 
-        document.getElementById('categoryFilter').addEventListener('change', () => {
-            this.renderTable();
-        });
+        const categoryFilter = document.getElementById('categoryFilter');
+        if (categoryFilter) {
+            categoryFilter.addEventListener('change', () => {
+                this.renderTable();
+            });
+        }
 
         // Buy recommendation button
-        document.getElementById('buyRecBtn')?.addEventListener('click', () => {
-            this.buyRecommendation();
-        });
+        const buyRecBtn = document.getElementById('buyRecBtn');
+        if (buyRecBtn) {
+            buyRecBtn.addEventListener('click', () => {
+                this.buyRecommendation();
+            });
+        }
 
         // Ignore recommendation button
-        document.getElementById('ignoreRecBtn')?.addEventListener('click', () => {
-            this.ignoreRecommendation();
-        });
+        const ignoreRecBtn = document.getElementById('ignoreRecBtn');
+        if (ignoreRecBtn) {
+            ignoreRecBtn.addEventListener('click', () => {
+                this.ignoreRecommendation();
+            });
+        }
     }
 
     calculateCost(upgradeName, level) {
-        const baseCost = this.upgrades[upgradeName].baseCost;
+        const baseCost = this.upgrades[upgradeName]?.baseCost || 0;
         return Math.floor(baseCost * Math.pow(1.15, level - 1));
     }
 
     calculateTotalSpent(upgradeName) {
         let total = 0;
-        const currentLevel = this.levels[upgradeName];
+        const currentLevel = this.levels[upgradeName] || 0;
         
         for (let level = 1; level <= currentLevel; level++) {
             total += this.calculateCost(upgradeName, level);
@@ -466,14 +491,15 @@ class BubbaOptimizer {
         let totalDps = 0;
         
         Object.entries(this.upgrades).forEach(([name, data]) => {
-            const level = this.levels[name];
+            const level = this.levels[name] || 0;
             totalDps += data.dps * level;
         });
         
         this.currentDps = totalDps;
         
         // Update UI
-        document.getElementById('currentDps').textContent = totalDps.toFixed(2);
+        const currentDpsElem = document.getElementById('currentDps');
+        if (currentDpsElem) currentDpsElem.textContent = totalDps.toFixed(2);
         
         return totalDps;
     }
@@ -482,7 +508,7 @@ class BubbaOptimizer {
         let newDps = 0;
         
         Object.entries(this.upgrades).forEach(([name, data]) => {
-            let level = this.levels[name];
+            let level = this.levels[name] || 0;
             
             if (name === upgradeName) {
                 level += 1;
@@ -495,13 +521,16 @@ class BubbaOptimizer {
     }
 
     findBestUpgrade() {
-        this.availableMoney = parseInt(document.getElementById('moneyInput').value) || 0;
+        const moneyInput = document.getElementById('moneyInput');
+        if (moneyInput) {
+            this.availableMoney = parseInt(moneyInput.value) || 0;
+        }
         
         let bestUpgrade = null;
         let bestValue = -Infinity;
         
         Object.entries(this.upgrades).forEach(([name, data]) => {
-            const currentLevel = this.levels[name];
+            const currentLevel = this.levels[name] || 0;
             
             // Skip if at max level
             if (currentLevel >= data.maxLevel) return;
@@ -512,7 +541,8 @@ class BubbaOptimizer {
             const nextCost = this.calculateCost(name, currentLevel + 1);
             
             // Skip if not affordable (unless we're ignoring affordability)
-            if (nextCost > this.availableMoney && document.getElementById('filterAffordable').checked) {
+            const filterAffordable = document.getElementById('filterAffordable');
+            if (filterAffordable?.checked && nextCost > this.availableMoney) {
                 return;
             }
             
@@ -556,21 +586,34 @@ class BubbaOptimizer {
         if (panel) panel.style.display = 'block';
         
         const upgrade = this.upgrades[upgradeName];
-        const currentLevel = this.levels[upgradeName];
+        if (!upgrade) return;
+        
+        const currentLevel = this.levels[upgradeName] || 0;
         const nextCost = this.calculateCost(upgradeName, currentLevel + 1);
         const dpsIncrease = upgrade.dps;
         const dpsPerCost = upgrade.dps / nextCost;
         const affordable = nextCost <= this.availableMoney;
         
         // Update recommendation card
-        if (document.getElementById('recName')) {
-            document.getElementById('recName').textContent = upgradeName;
-            document.getElementById('recCurrentLevel').textContent = `${currentLevel} / ${upgrade.maxLevel}`;
-            document.getElementById('recNextCost').textContent = nextCost.toLocaleString();
-            document.getElementById('recDpsIncrease').textContent = dpsIncrease.toFixed(4);
-            document.getElementById('recDpsPerCost').textContent = dpsPerCost.toFixed(6);
-            document.getElementById('recAffordable').textContent = affordable ? 'Yes' : 'No';
-            document.getElementById('recAffordable').style.color = affordable ? '#27ae60' : '#e74c3c';
+        const recName = document.getElementById('recName');
+        if (recName) recName.textContent = upgradeName;
+        
+        const recCurrentLevel = document.getElementById('recCurrentLevel');
+        if (recCurrentLevel) recCurrentLevel.textContent = `${currentLevel} / ${upgrade.maxLevel}`;
+        
+        const recNextCost = document.getElementById('recNextCost');
+        if (recNextCost) recNextCost.textContent = nextCost.toLocaleString();
+        
+        const recDpsIncrease = document.getElementById('recDpsIncrease');
+        if (recDpsIncrease) recDpsIncrease.textContent = dpsIncrease.toFixed(4);
+        
+        const recDpsPerCost = document.getElementById('recDpsPerCost');
+        if (recDpsPerCost) recDpsPerCost.textContent = dpsPerCost.toFixed(6);
+        
+        const recAffordable = document.getElementById('recAffordable');
+        if (recAffordable) {
+            recAffordable.textContent = affordable ? 'Yes' : 'No';
+            recAffordable.style.color = affordable ? '#27ae60' : '#e74c3c';
         }
         
         // Update DPS stats
@@ -578,10 +621,13 @@ class BubbaOptimizer {
         const dpsIncreasePercent = this.currentDps > 0 ? 
             ((newDps - this.currentDps) / this.currentDps * 100).toFixed(2) : '100.00';
         
-        if (document.getElementById('newDps')) {
-            document.getElementById('newDps').textContent = newDps.toFixed(2);
-            document.getElementById('dpsIncrease').textContent = `${dpsIncreasePercent}%`;
-            document.getElementById('dpsIncrease').style.color = parseFloat(dpsIncreasePercent) > 0 ? '#27ae60' : '#e74c3c';
+        const newDpsElem = document.getElementById('newDps');
+        if (newDpsElem) newDpsElem.textContent = newDps.toFixed(2);
+        
+        const dpsIncreaseElem = document.getElementById('dpsIncrease');
+        if (dpsIncreaseElem) {
+            dpsIncreaseElem.textContent = `${dpsIncreasePercent}%`;
+            dpsIncreaseElem.style.color = parseFloat(dpsIncreasePercent) > 0 ? '#27ae60' : '#e74c3c';
         }
     }
 
@@ -589,26 +635,27 @@ class BubbaOptimizer {
         if (!this.recommendation) return;
         
         const upgradeName = this.recommendation;
-        const currentLevel = this.levels[upgradeName];
+        const currentLevel = this.levels[upgradeName] || 0;
         const nextCost = this.calculateCost(upgradeName, currentLevel + 1);
         
         if (nextCost > this.availableMoney) {
-            toastr.error(`Not enough money! Need ${nextCost.toLocaleString()}`);
+            this.showNotification(`Not enough money! Need ${nextCost.toLocaleString()}`, 'error');
             return;
         }
         
-        this.levels[upgradeName]++;
+        this.levels[upgradeName] = currentLevel + 1;
         this.availableMoney -= nextCost;
         
         // Update money input
-        document.getElementById('moneyInput').value = this.availableMoney;
+        const moneyInput = document.getElementById('moneyInput');
+        if (moneyInput) moneyInput.value = this.availableMoney;
         
         // Recalculate
         this.calculateDps();
         this.findBestUpgrade();
         this.saveToStorage();
         
-        toastr.success(`Purchased ${upgradeName} level ${currentLevel + 1} for ${nextCost.toLocaleString()}`);
+        this.showNotification(`Purchased ${upgradeName} level ${currentLevel + 1} for ${nextCost.toLocaleString()}`, 'success');
     }
 
     ignoreRecommendation() {
@@ -617,15 +664,15 @@ class BubbaOptimizer {
         this.ignoredRecommendations.add(this.recommendation);
         this.findBestUpgrade();
         
-        toastr.info(`Ignored ${this.recommendation} for this session`);
+        this.showNotification(`Ignored ${this.recommendation} for this session`, 'info');
     }
 
     incrementLevel(upgradeName, amount = 1) {
-        const currentLevel = this.levels[upgradeName];
-        const maxLevel = this.upgrades[upgradeName].maxLevel;
+        const currentLevel = this.levels[upgradeName] || 0;
+        const maxLevel = this.upgrades[upgradeName]?.maxLevel || 100;
         
         if (currentLevel >= maxLevel) {
-            toastr.warning(`${upgradeName} is already at max level!`);
+            this.showNotification(`${upgradeName} is already at max level!`, 'warning');
             return;
         }
         
@@ -638,7 +685,7 @@ class BubbaOptimizer {
         }
         
         if (totalCost > this.availableMoney) {
-            toastr.error(`Need ${totalCost.toLocaleString()} money for ${amount} levels!`);
+            this.showNotification(`Need ${totalCost.toLocaleString()} money for ${amount} levels!`, 'error');
             return;
         }
         
@@ -646,18 +693,19 @@ class BubbaOptimizer {
         this.availableMoney -= totalCost;
         
         // Update UI
-        document.getElementById('moneyInput').value = this.availableMoney;
+        const moneyInput = document.getElementById('moneyInput');
+        if (moneyInput) moneyInput.value = this.availableMoney;
         
         // Recalculate
         this.calculateDps();
         this.findBestUpgrade();
         this.saveToStorage();
         
-        toastr.success(`Added ${amount} level(s) to ${upgradeName}`);
+        this.showNotification(`Added ${amount} level(s) to ${upgradeName}`, 'success');
     }
 
     decrementLevel(upgradeName, amount = 1) {
-        const currentLevel = this.levels[upgradeName];
+        const currentLevel = this.levels[upgradeName] || 0;
         
         if (currentLevel === 0) return;
         
@@ -674,24 +722,25 @@ class BubbaOptimizer {
         this.availableMoney += refund;
         
         // Update UI
-        document.getElementById('moneyInput').value = this.availableMoney;
+        const moneyInput = document.getElementById('moneyInput');
+        if (moneyInput) moneyInput.value = this.availableMoney;
         
         // Recalculate
         this.calculateDps();
         this.findBestUpgrade();
         this.saveToStorage();
         
-        toastr.info(`Refunded ${refund.toLocaleString()} from ${upgradeName}`);
+        this.showNotification(`Refunded ${refund.toLocaleString()} from ${upgradeName}`, 'info');
     }
 
     setLevel(upgradeName, level) {
         const parsedLevel = parseInt(level);
-        const maxLevel = this.upgrades[upgradeName].maxLevel;
+        const maxLevel = this.upgrades[upgradeName]?.maxLevel || 100;
         
         if (isNaN(parsedLevel)) return;
         
         const newLevel = Math.max(0, Math.min(parsedLevel, maxLevel));
-        const currentLevel = this.levels[upgradeName];
+        const currentLevel = this.levels[upgradeName] || 0;
         
         if (newLevel === currentLevel) return;
         
@@ -703,7 +752,7 @@ class BubbaOptimizer {
             }
             
             if (totalCost > this.availableMoney) {
-                toastr.error(`Need ${totalCost.toLocaleString()} money!`);
+                this.showNotification(`Need ${totalCost.toLocaleString()} money!`, 'error');
                 this.renderTable(); // Reset input to current level
                 return;
             }
@@ -724,7 +773,8 @@ class BubbaOptimizer {
         }
         
         // Update UI
-        document.getElementById('moneyInput').value = this.availableMoney;
+        const moneyInput = document.getElementById('moneyInput');
+        if (moneyInput) moneyInput.value = this.availableMoney;
         
         // Recalculate
         this.calculateDps();
@@ -745,10 +795,14 @@ class BubbaOptimizer {
         let totalSpent = 0;
         let totalDps = 0;
         
-        const searchTerm = document.getElementById('searchInput')?.value.toLowerCase() || '';
-        const categoryFilter = document.getElementById('categoryFilter')?.value || 'all';
-        const showOnlyAffordable = document.getElementById('filterAffordable')?.checked || false;
-        const hideMaxLevel = document.getElementById('filterMaxLevel')?.checked || false;
+        const searchInput = document.getElementById('searchInput');
+        const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+        const categoryFilter = document.getElementById('categoryFilter');
+        const category = categoryFilter ? categoryFilter.value : 'all';
+        const filterAffordable = document.getElementById('filterAffordable');
+        const showOnlyAffordable = filterAffordable ? filterAffordable.checked : false;
+        const filterMaxLevel = document.getElementById('filterMaxLevel');
+        const hideMaxLevel = filterMaxLevel ? filterMaxLevel.checked : false;
         
         // If no upgrades loaded, show message
         if (Object.keys(this.upgrades).length === 0) {
@@ -771,11 +825,11 @@ class BubbaOptimizer {
                     return false;
                 }
                 
-                if (categoryFilter !== 'all' && data.category !== categoryFilter) {
+                if (category !== 'all' && data.category !== category) {
                     return false;
                 }
                 
-                const currentLevel = this.levels[name];
+                const currentLevel = this.levels[name] || 0;
                 
                 if (hideMaxLevel && currentLevel >= data.maxLevel) {
                     return false;
@@ -790,7 +844,7 @@ class BubbaOptimizer {
                 
                 return true;
             })
-            .sort(([nameA, dataA], [nameB, dataB]) => {
+            .sort(([nameA], [nameB]) => {
                 // Sort by recommendation status first, then by name
                 const aRec = nameA === this.recommendation;
                 const bRec = nameB === this.recommendation;
@@ -801,7 +855,7 @@ class BubbaOptimizer {
                 return nameA.localeCompare(nameB);
             })
             .forEach(([name, data]) => {
-                const currentLevel = this.levels[name];
+                const currentLevel = this.levels[name] || 0;
                 const nextCost = this.calculateCost(name, currentLevel + 1);
                 const totalCost = this.calculateTotalSpent(name);
                 const dpsGain = data.dps;
@@ -868,15 +922,22 @@ class BubbaOptimizer {
                 const levelInput = row.querySelector('.level-input');
                 const quickButtons = row.querySelectorAll('.quick-btn');
                 
-                incrementBtn.addEventListener('click', () => this.incrementLevel(name, 1));
-                decrementBtn.addEventListener('click', () => this.decrementLevel(name, 1));
+                if (incrementBtn) {
+                    incrementBtn.addEventListener('click', () => this.incrementLevel(name, 1));
+                }
                 
-                levelInput.addEventListener('change', (e) => this.setLevel(name, e.target.value));
-                levelInput.addEventListener('blur', (e) => {
-                    if (e.target.value === '') {
-                        e.target.value = currentLevel;
-                    }
-                });
+                if (decrementBtn) {
+                    decrementBtn.addEventListener('click', () => this.decrementLevel(name, 1));
+                }
+                
+                if (levelInput) {
+                    levelInput.addEventListener('change', (e) => this.setLevel(name, e.target.value));
+                    levelInput.addEventListener('blur', (e) => {
+                        if (e.target.value === '') {
+                            e.target.value = currentLevel;
+                        }
+                    });
+                }
                 
                 quickButtons.forEach(btn => {
                     btn.addEventListener('click', (e) => {
@@ -891,16 +952,19 @@ class BubbaOptimizer {
             });
         
         // Update summary
-        if (document.getElementById('totalLevels')) {
-            document.getElementById('totalLevels').textContent = totalLevels;
-            document.getElementById('totalSpent').textContent = totalSpent.toLocaleString();
-            document.getElementById('totalDps').textContent = totalDps.toFixed(2);
-        }
+        const totalLevelsElem = document.getElementById('totalLevels');
+        if (totalLevelsElem) totalLevelsElem.textContent = totalLevels;
+        
+        const totalSpentElem = document.getElementById('totalSpent');
+        if (totalSpentElem) totalSpentElem.textContent = totalSpent.toLocaleString();
+        
+        const totalDpsElem = document.getElementById('totalDps');
+        if (totalDpsElem) totalDpsElem.textContent = totalDps.toFixed(2);
         
         // Update current DPS
-        if (document.getElementById('currentDps')) {
-            document.getElementById('currentDps').textContent = totalDps.toFixed(2);
-        }
+        const currentDpsElem = document.getElementById('currentDps');
+        if (currentDpsElem) currentDpsElem.textContent = totalDps.toFixed(2);
+        
         this.currentDps = totalDps;
     }
 
@@ -908,7 +972,6 @@ class BubbaOptimizer {
         const data = {
             money: this.availableMoney,
             levels: this.levels,
-            upgrades: this.upgrades,
             timestamp: new Date().toISOString(),
             version: '1.0.0'
         };
@@ -916,15 +979,16 @@ class BubbaOptimizer {
         const jsonStr = JSON.stringify(data, null, 2);
         
         // Update export preview
-        if (document.getElementById('jsonOutput')) {
-            document.getElementById('jsonOutput').value = jsonStr;
+        const jsonOutput = document.getElementById('jsonOutput');
+        if (jsonOutput) {
+            jsonOutput.value = jsonStr;
         }
         
         // Switch to export tab
         const exportTab = document.querySelector('.tab-btn[data-tab="export"]');
         if (exportTab) exportTab.click();
         
-        toastr.success('Data exported to JSON');
+        this.showNotification('Data exported to JSON', 'success');
     }
 
     updateExportPreview() {
@@ -934,8 +998,9 @@ class BubbaOptimizer {
             timestamp: new Date().toISOString()
         };
         
-        if (document.getElementById('jsonOutput')) {
-            document.getElementById('jsonOutput').value = JSON.stringify(data, null, 2);
+        const jsonOutput = document.getElementById('jsonOutput');
+        if (jsonOutput) {
+            jsonOutput.value = JSON.stringify(data, null, 2);
         }
     }
 
@@ -946,7 +1011,7 @@ class BubbaOptimizer {
         const jsonText = jsonInput.value;
         
         if (!jsonText.trim()) {
-            toastr.error('Please paste JSON data first');
+            this.showNotification('Please paste JSON data first', 'error');
             return;
         }
         
@@ -964,7 +1029,8 @@ class BubbaOptimizer {
             
             if (data.money !== undefined) {
                 this.availableMoney = data.money;
-                document.getElementById('moneyInput').value = this.availableMoney;
+                const moneyInput = document.getElementById('moneyInput');
+                if (moneyInput) moneyInput.value = this.availableMoney;
             }
             
             // Reset ignored recommendations
@@ -976,10 +1042,10 @@ class BubbaOptimizer {
             this.findBestUpgrade();
             this.saveToStorage();
             
-            toastr.success('Data imported successfully!');
+            this.showNotification('Data imported successfully!', 'success');
             
         } catch (error) {
-            toastr.error('Invalid JSON format!');
+            this.showNotification('Invalid JSON format!', 'error');
             console.error(error);
         }
     }
@@ -989,10 +1055,11 @@ class BubbaOptimizer {
         
         try {
             const text = await file.text();
-            document.getElementById('jsonInput').value = text;
+            const jsonInput = document.getElementById('jsonInput');
+            if (jsonInput) jsonInput.value = text;
             this.importFromJson();
         } catch (error) {
-            toastr.error('Failed to read file');
+            this.showNotification('Failed to read file', 'error');
             console.error(error);
         }
     }
@@ -1002,9 +1069,15 @@ class BubbaOptimizer {
         if (!textarea) return;
         
         textarea.select();
-        document.execCommand('copy');
+        textarea.setSelectionRange(0, 99999); // For mobile devices
         
-        toastr.success('Copied to clipboard!');
+        try {
+            document.execCommand('copy');
+            this.showNotification('Copied to clipboard!', 'success');
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            this.showNotification('Failed to copy to clipboard', 'error');
+        }
     }
 
     downloadJson() {
@@ -1026,7 +1099,7 @@ class BubbaOptimizer {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        toastr.success('File downloaded!');
+        this.showNotification('File downloaded!', 'success');
     }
 
     showLoading() {
