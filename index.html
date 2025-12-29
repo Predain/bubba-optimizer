@@ -3,56 +3,356 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bubba Optimizer</title>
+    <title>Idleon - Bubba Mini-Game Optimizer</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; padding: 20px; background: #f0f0f0; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        header { background: #2c3e50; color: white; padding: 20px; border-radius: 10px 10px 0 0; }
-        h1 { margin-bottom: 10px; }
-        .main { background: white; padding: 20px; border-radius: 0 0 10px 10px; }
-        .loading { text-align: center; padding: 50px; font-size: 18px; }
-        .error { background: #ffebee; color: #c62828; padding: 20px; border-radius: 5px; margin: 20px 0; }
-        button { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        button:hover { background: #2980b9; }
+        /* Simple notification system */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            z-index: 10000;
+            animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s;
+            max-width: 400px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .notification.success { background: #27ae60; }
+        .notification.error { background: #e74c3c; }
+        .notification.info { background: #3498db; }
+        .notification.warning { background: #f39c12; }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
     </style>
 </head>
 <body>
+    <div id="notification-container"></div>
+    
     <div class="container">
         <header>
-            <h1>Bubba Fishing Mini-Game Optimizer</h1>
-            <p>Optimize your Bubba mini-game upgrades in Idleon</p>
-        </header>
-        <div class="main">
-            <div class="loading" id="loading">
-                <p>Loading optimizer...</p>
+            <div class="header-content">
+                <h1><i class="fas fa-fish"></i> Bubba Fishing Mini-Game Optimizer</h1>
+                <p class="subtitle">Calculates optimal upgrade purchases for maximum efficiency</p>
+                <div class="header-links">
+                    <a href="https://docs.google.com/spreadsheets/d/e/2PACX-1vTV0t6SXTEs2ndKMVlnBssVfGQEIKZB-F5mDzLN3u7FLrOcWuslmlxITJ0T3_VONJzy7GsBi9ARQbEF/pubhtml" 
+                       target="_blank" class="btn-sheet">
+                        <i class="fab fa-google"></i> Original Google Sheet
+                    </a>
+                    <button id="helpBtn" class="btn-help">
+                        <i class="fas fa-question-circle"></i> How to Use
+                    </button>
+                </div>
             </div>
-            <div id="app" style="display: none;">
-                <!-- App content will be loaded here -->
-                <h2>Money: <input type="number" id="money" value="1000000"></h2>
-                <button onclick="calculate()">Calculate Best Upgrade</button>
-                <div id="results"></div>
+        </header>
+
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-label"><i class="fas fa-coins"></i> Available Money:</span>
+                <input type="number" id="moneyInput" value="1000000" min="0" step="1000" class="stat-input">
+            </div>
+            <div class="stat">
+                <span class="stat-label"><i class="fas fa-chart-line"></i> Current DPS:</span>
+                <span id="currentDps" class="stat-value">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label"><i class="fas fa-chart-bar"></i> New DPS:</span>
+                <span id="newDps" class="stat-value">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label"><i class="fas fa-percentage"></i> DPS Increase:</span>
+                <span id="dpsIncrease" class="stat-value">0%</span>
+            </div>
+            <button id="calculateBtn" class="btn-calculate">
+                <i class="fas fa-calculator"></i> Calculate Best Upgrade
+            </button>
+        </div>
+
+        <div class="main-content">
+            <!-- Strategy Selection -->
+            <div class="strategy-section">
+                <h2><i class="fas fa-chess-board"></i> Optimization Strategy</h2>
+                <div class="strategy-grid">
+                    <label class="strategy-option">
+                        <input type="radio" name="strategy" value="dpsPerCost" checked>
+                        <div class="strategy-card">
+                            <i class="fas fa-balance-scale"></i>
+                            <h3>DPS per Cost</h3>
+                            <p>Maximize DPS gain per money spent</p>
+                        </div>
+                    </label>
+                    <label class="strategy-option">
+                        <input type="radio" name="strategy" value="dps">
+                        <div class="strategy-card">
+                            <i class="fas fa-bolt"></i>
+                            <h3>Max DPS</h3>
+                            <p>Maximize total DPS regardless of cost</p>
+                        </div>
+                    </label>
+                    <label class="strategy-option">
+                        <input type="radio" name="strategy" value="totalDamage">
+                        <div class="strategy-card">
+                            <i class="fas fa-crosshairs"></i>
+                            <h3>Total Damage</h3>
+                            <p>Focus on highest damage upgrades</p>
+                        </div>
+                    </label>
+                    <label class="strategy-option">
+                        <input type="radio" name="strategy" value="cost">
+                        <div class="strategy-card">
+                            <i class="fas fa-coins"></i>
+                            <h3>Cheapest</h3>
+                            <p>Focus on affordable upgrades</p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filter-section">
+                <h2><i class="fas fa-filter"></i> Filters</h2>
+                <div class="filters">
+                    <div class="filter-group">
+                        <label>
+                            <input type="checkbox" id="filterAffordable" checked>
+                            Only show affordable upgrades
+                        </label>
+                        <label>
+                            <input type="checkbox" id="filterMaxLevel" checked>
+                            Hide max level upgrades
+                        </label>
+                    </div>
+                    <div class="filter-group">
+                        <input type="text" id="searchInput" placeholder="Search upgrades...">
+                        <select id="categoryFilter">
+                            <option value="all">All Categories</option>
+                            <option value="damage">Damage</option>
+                            <option value="utility">Utility</option>
+                            <option value="money">Money</option>
+                            <option value="special">Special</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upgrades Table -->
+            <div class="table-section">
+                <div class="table-header">
+                    <h2><i class="fas fa-table"></i> Upgrades</h2>
+                    <div class="table-controls">
+                        <button id="resetBtn" class="btn-reset">
+                            <i class="fas fa-redo"></i> Reset All
+                        </button>
+                        <button id="exportBtn" class="btn-export">
+                            <i class="fas fa-download"></i> Export
+                        </button>
+                        <button id="importBtn" class="btn-import">
+                            <i class="fas fa-upload"></i> Import
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="table-container">
+                    <table id="upgradesTable">
+                        <thead>
+                            <tr>
+                                <th>Upgrade</th>
+                                <th>Current Level</th>
+                                <th>Base Cost</th>
+                                <th>Next Cost</th>
+                                <th>DPS Gain</th>
+                                <th>DPS per Cost</th>
+                                <th>Total DPS</th>
+                                <th>Control</th>
+                                <th class="recommend-col">Recommend</th>
+                            </tr>
+                        </thead>
+                        <tbody id="upgradesBody">
+                            <!-- Data will be populated here -->
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="9" class="summary-row">
+                                    <div class="summary-content">
+                                        <span>Total Levels: <strong id="totalLevels">0</strong></span>
+                                        <span>Total Money Spent: <strong id="totalSpent">0</strong></span>
+                                        <span>Total DPS: <strong id="totalDps">0</strong></span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Recommendation Panel -->
+            <div class="recommendation-section" id="recommendationPanel" style="display: none;">
+                <h2><i class="fas fa-star"></i> Recommended Upgrade</h2>
+                <div class="recommendation-card">
+                    <div class="recommendation-header">
+                        <h3 id="recName"></h3>
+                        <span class="rec-badge">BEST VALUE</span>
+                    </div>
+                    <div class="recommendation-details">
+                        <div class="rec-stat">
+                            <span class="rec-label">Current Level:</span>
+                            <span class="rec-value" id="recCurrentLevel"></span>
+                        </div>
+                        <div class="rec-stat">
+                            <span class="rec-label">Next Cost:</span>
+                            <span class="rec-value" id="recNextCost"></span>
+                        </div>
+                        <div class="rec-stat">
+                            <span class="rec-label">DPS Increase:</span>
+                            <span class="rec-value" id="recDpsIncrease"></span>
+                        </div>
+                        <div class="rec-stat">
+                            <span class="rec-label">DPS per Cost:</span>
+                            <span class="rec-value" id="recDpsPerCost"></span>
+                        </div>
+                        <div class="rec-stat">
+                            <span class="rec-label">Affordable:</span>
+                            <span class="rec-value" id="recAffordable"></span>
+                        </div>
+                    </div>
+                    <div class="recommendation-actions">
+                        <button id="buyRecBtn" class="btn-buy">
+                            <i class="fas fa-shopping-cart"></i> Buy This Upgrade
+                        </button>
+                        <button id="ignoreRecBtn" class="btn-ignore">
+                            <i class="fas fa-eye-slash"></i> Ignore This Time
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Import/Export Panel -->
+            <div class="import-export-section">
+                <div class="import-export-tabs">
+                    <button class="tab-btn active" data-tab="import">Import Data</button>
+                    <button class="tab-btn" data-tab="export">Export Data</button>
+                </div>
+                
+                <div class="tab-content active" id="importTab">
+                    <div class="json-editor">
+                        <textarea id="jsonInput" placeholder='Paste your JSON data here or use the format:
+{
+  "money": 1000000,
+  "levels": {
+    "Bubbles": 10,
+    "Bubble Breakthrough": 5,
+    ...
+  }
+}'></textarea>
+                        <div class="json-actions">
+                            <button id="loadJsonBtn" class="btn-load">
+                                <i class="fas fa-file-import"></i> Load from JSON
+                            </button>
+                            <button id="loadFileBtn" class="btn-file">
+                                <i class="fas fa-folder-open"></i> Load from File
+                            </button>
+                            <button id="clearJsonBtn" class="btn-clear">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="exportTab">
+                    <div class="export-options">
+                        <div class="export-preview">
+                            <textarea id="jsonOutput" readonly></textarea>
+                        </div>
+                        <div class="export-actions">
+                            <button id="copyJsonBtn" class="btn-copy">
+                                <i class="fas fa-copy"></i> Copy to Clipboard
+                            </button>
+                            <button id="saveJsonBtn" class="btn-save">
+                                <i class="fas fa-save"></i> Save as File
+                            </button>
+                            <button id="clearAllBtn" class="btn-clear-all">
+                                <i class="fas fa-broom"></i> Clear All Data
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <div class="footer-content">
+                <div class="footer-info">
+                    <h3><i class="fas fa-info-circle"></i> About This Tool</h3>
+                    <p>This tool calculates the most efficient upgrades for the Bubba Fishing Mini-Game in Legends of Idleon. 
+                    It uses the same calculations as the original Google Sheet but with a better interface.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://idleon.wiki/Bubba" target="_blank"><i class="fas fa-book"></i> Idleon Wiki</a>
+                    <a href="https://www.legendsofidleon.com/" target="_blank"><i class="fas fa-gamepad"></i> Official Site</a>
+                    <a href="https://github.com" target="_blank"><i class="fab fa-github"></i> GitHub</a>
+                </div>
+                <div class="footer-credits">
+                    <p>This is a fan-made tool. Legends of Idleon is © LavaFlame2.</p>
+                    <p class="version">Version 1.0.0 | Based on original sheet by Idleon community</p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="helpModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-question-circle"></i> How to Use This Optimizer</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="help-section">
+                    <h3><i class="fas fa-coins"></i> Step 1: Set Your Money</h3>
+                    <p>Enter your available money in the top bar. This is used to determine which upgrades you can afford.</p>
+                </div>
+                <div class="help-section">
+                    <h3><i class="fas fa-sliders-h"></i> Step 2: Choose Strategy</h3>
+                    <ul>
+                        <li><strong>DPS per Cost:</strong> Best value for money (default)</li>
+                        <li><strong>Max DPS:</strong> Highest DPS increase regardless of cost</li>
+                        <li><strong>Total Damage:</strong> Focus on damage multipliers</li>
+                        <li><strong>Cheapest:</strong> Most affordable upgrades first</li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h3><i class="fas fa-table"></i> Step 3: Manage Upgrades</h3>
+                    <p>Use the table to manually set levels, or use the +1 and +10 buttons for quick adjustments.</p>
+                </div>
+                <div class="help-section">
+                    <h3><i class="fas fa-star"></i> Step 4: Follow Recommendations</h3>
+                    <p>The tool will highlight the best upgrade to buy next based on your strategy and available money.</p>
+                </div>
+                <div class="help-section">
+                    <h3><i class="fas fa-save"></i> Step 5: Save Your Progress</h3>
+                    <p>Use the Export feature to save your current levels and money. You can import it later to continue.</p>
+                </div>
             </div>
         </div>
     </div>
-    
-    <script>
-        // Simple loader
-        setTimeout(() => {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('app').style.display = 'block';
-            
-            // Load the full app
-            const script = document.createElement('script');
-            script.src = 'app.js';
-            document.head.appendChild(script);
-            
-            // Load CSS
-            const link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = 'style.css';
-            document.head.appendChild(link);
-        }, 1000);
-    </script>
+
+    <!-- Loading Overlay -->
+    <div id="loading" class="loading-overlay">
+        <div class="loading-content">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading Bubba Optimizer...</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
 </body>
 </html>
