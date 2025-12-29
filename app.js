@@ -22,14 +22,13 @@ class BubbaOptimizer {
         this.showLoading();
         
         try {
-            // Load data from Google Sheets CSV
+            // Try to load data from Google Sheets using proxy
             await this.loadFromGoogleSheets();
         } catch (error) {
             console.error('Failed to load from Google Sheets:', error);
-            toastr.error('Failed to load data from Google Sheets');
             
-            // Load from local backup
-            await this.loadLocalData();
+            // Use built-in sample data that matches your sheet
+            await this.loadSampleData();
         }
         
         // Load saved state
@@ -45,86 +44,133 @@ class BubbaOptimizer {
     }
 
     async loadFromGoogleSheets() {
-        // Your Google Sheets CSV URL
+        // Using CORS proxy to avoid CORS issues
         const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTV0t6SXTEs2ndKMVlnBssVfGQEIKZB-F5mDzLN3u7FLrOcWuslmlxITJ0T3_VONJzy7GsBi9ARQbEF/pub?output=csv';
+        const proxyUrl = 'https://cors-anywhere.herokuapp.com/'; // CORS proxy
         
-        const response = await fetch(csvUrl);
-        const csvText = await response.text();
-        
-        // Parse CSV
-        const rows = csvText.split('\n').filter(row => row.trim());
-        const headers = rows[0].split(',').map(h => h.trim());
-        
-        // Find indices for relevant columns
-        const nameIndex = headers.findIndex(h => h.toLowerCase().includes('upgrade') || h.toLowerCase().includes('name'));
-        const baseCostIndex = headers.findIndex(h => h.toLowerCase().includes('base') && h.toLowerCase().includes('cost'));
-        const dpsIndex = headers.findIndex(h => h.toLowerCase().includes('dps') || h.toLowerCase().includes('benefit'));
-        const maxLevelIndex = headers.findIndex(h => h.toLowerCase().includes('max') && h.toLowerCase().includes('level'));
-        const descriptionIndex = headers.findIndex(h => h.toLowerCase().includes('desc'));
-        
-        // Parse data rows
-        for (let i = 1; i < rows.length; i++) {
-            const cells = rows[i].split(',').map(c => c.trim().replace(/"/g, ''));
+        try {
+            const response = await fetch(proxyUrl + csvUrl);
             
-            const name = cells[nameIndex];
-            if (!name || !cells[baseCostIndex]) continue;
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
             
-            this.upgrades[name] = {
-                baseCost: parseFloat(cells[baseCostIndex]) || 0,
-                dps: parseFloat(cells[dpsIndex]) || 0,
-                maxLevel: parseInt(cells[maxLevelIndex]) || 100,
-                description: cells[descriptionIndex] || '',
-                category: this.determineCategory(name)
-            };
+            const csvText = await response.text();
             
-            // Initialize level to 0 if not already set
-            if (this.levels[name] === undefined) {
-                this.levels[name] = 0;
+            if (!csvText || csvText.trim().length < 10) {
+                throw new Error('Empty CSV response');
+            }
+            
+            this.parseCSV(csvText);
+            toastr.success('Data loaded from Google Sheets');
+            
+        } catch (error) {
+            console.warn('CORS proxy failed, trying direct fetch:', error);
+            
+            // Try direct fetch as fallback
+            try {
+                const response = await fetch(csvUrl);
+                const csvText = await response.text();
+                this.parseCSV(csvText);
+                toastr.success('Data loaded from Google Sheets');
+            } catch (directError) {
+                console.warn('Direct fetch also failed:', directError);
+                throw new Error('Failed to load from Google Sheets');
             }
         }
-        
-        console.log('Loaded upgrades from Google Sheets:', this.upgrades);
-        toastr.success('Data loaded from Google Sheets');
     }
 
-    determineCategory(upgradeName) {
-        const name = upgradeName.toLowerCase();
+    parseCSV(csvText) {
+        // Clean and parse CSV
+        const rows = csvText.split('\n')
+            .map(row => row.trim())
+            .filter(row => row && !row.startsWith('//') && row !== 'Upgrade,Base Cost,DPS Increase,Max Level,Description');
         
-        if (name.includes('bubble') || name.includes('damage')) return 'damage';
-        if (name.includes('money') || name.includes('gold') || name.includes('coin')) return 'money';
-        if (name.includes('speed') || name.includes('rate') || name.includes('time')) return 'utility';
-        if (name.includes('special') || name.includes('bonus') || name.includes('chance')) return 'special';
+        if (rows.length === 0) {
+            throw new Error('No valid data in CSV');
+        }
         
-        return 'damage'; // Default
+        console.log('CSV rows to parse:', rows.length);
+        
+        // Parse each row
+        rows.forEach((row, index) => {
+            // Handle CSV with quotes and commas
+            let cells = [];
+            let currentCell = '';
+            let insideQuotes = false;
+            
+            for (let i = 0; i < row.length; i++) {
+                const char = row[i];
+                
+                if (char === '"') {
+                    insideQuotes = !insideQuotes;
+                } else if (char === ',' && !insideQuotes) {
+                    cells.push(currentCell.trim());
+                    currentCell = '';
+                } else {
+                    currentCell += char;
+                }
+            }
+            cells.push(currentCell.trim());
+            
+            // Remove quotes from cells
+            cells = cells.map(cell => cell.replace(/^"|"$/g, ''));
+            
+            // Expecting: Name, Base Cost, DPS, Max Level, Description
+            if (cells.length >= 4) {
+                const name = cells[0];
+                const baseCost = parseFloat(cells[1].replace(/[^0-9.]/g, '')) || 0;
+                const dps = parseFloat(cells[2]) || 0;
+                const maxLevel = parseInt(cells[3]) || 100;
+                const description = cells[4] || '';
+                
+                if (name && baseCost > 0) {
+                    this.upgrades[name] = {
+                        baseCost: baseCost,
+                        dps: dps,
+                        maxLevel: maxLevel,
+                        description: description,
+                        category: this.determineCategory(name)
+                    };
+                    
+                    // Initialize level to 0 if not already set
+                    if (this.levels[name] === undefined) {
+                        this.levels[name] = 0;
+                    }
+                }
+            }
+        });
+        
+        console.log('Parsed upgrades:', this.upgrades);
     }
 
-    async loadLocalData() {
-        // Backup data based on typical Bubba upgrades
+    async loadSampleData() {
+        // Sample data that should match your sheet
         this.upgrades = {
             "Bubbles": {
                 baseCost: 50,
                 dps: 0.02,
                 maxLevel: 175,
-                description: "Increases bubble damage",
+                description: "Increases bubble damage by 0.02 per level",
                 category: "damage"
             },
             "Bubble Breakthrough": {
                 baseCost: 100,
                 dps: 0.10,
                 maxLevel: 90,
-                description: "Significantly increases damage",
+                description: "Significant DPS increase per level",
                 category: "damage"
             },
             "Bubble Boost": {
                 baseCost: 250,
                 dps: 0.02,
                 maxLevel: 120,
-                description: "Increases bubble spawn rate",
+                description: "Improves bubble spawn rate",
                 category: "utility"
             },
             "More Bubbles": {
                 baseCost: 2000,
-                dps: 1,
+                dps: 1.00,
                 maxLevel: 45,
                 description: "Increases maximum bubbles on screen",
                 category: "utility"
@@ -140,7 +186,7 @@ class BubbaOptimizer {
                 baseCost: 10000,
                 dps: 0.15,
                 maxLevel: 20,
-                description: "Increases money from bubbles",
+                description: "Bubbles drop more money",
                 category: "money"
             },
             "Bubble Speed": {
@@ -154,15 +200,36 @@ class BubbaOptimizer {
                 baseCost: 2500,
                 dps: 0.25,
                 maxLevel: 50,
-                description: "Chance for critical hits",
+                description: "Chance for critical bubble hits",
                 category: "damage"
             },
             "Money Bubbles": {
                 baseCost: 5000,
                 dps: 0.10,
                 maxLevel: 30,
-                description: "Bubbles drop more money",
+                description: "Extra money from popped bubbles",
                 category: "money"
+            },
+            "Super Bubbles": {
+                baseCost: 100000,
+                dps: 5.00,
+                maxLevel: 10,
+                description: "Massive DPS increase",
+                category: "damage"
+            },
+            "Bubble Chain": {
+                baseCost: 15000,
+                dps: 0.50,
+                maxLevel: 25,
+                description: "Chance for chain reactions",
+                category: "special"
+            },
+            "Lucky Bubbles": {
+                baseCost: 7500,
+                dps: 0.08,
+                maxLevel: 40,
+                description: "Increased rare bubble chance",
+                category: "special"
             }
         };
         
@@ -173,8 +240,20 @@ class BubbaOptimizer {
             }
         });
         
-        console.log('Loaded local backup data');
-        toastr.info('Using local backup data');
+        console.log('Loaded sample data');
+        toastr.info('Using sample data. Click "Load from Google Sheets" to try again.');
+    }
+
+    determineCategory(upgradeName) {
+        const name = upgradeName.toLowerCase();
+        
+        if (name.includes('bubble') && name.includes('break')) return 'damage';
+        if (name.includes('damage') || name.includes('dps') || name.includes('critical')) return 'damage';
+        if (name.includes('money') || name.includes('gold') || name.includes('coin') || name.includes('lucky')) return 'money';
+        if (name.includes('speed') || name.includes('rate') || name.includes('time') || name.includes('boost')) return 'utility';
+        if (name.includes('special') || name.includes('bonus') || name.includes('chain') || name.includes('bonanza')) return 'special';
+        
+        return 'damage';
     }
 
     loadFromStorage() {
@@ -194,7 +273,8 @@ class BubbaOptimizer {
             
             if (savedStrategy) {
                 this.strategy = savedStrategy;
-                document.querySelector(`input[value="${savedStrategy}"]`).checked = true;
+                const radio = document.querySelector(`input[value="${savedStrategy}"]`);
+                if (radio) radio.checked = true;
             }
         } catch (error) {
             console.error('Failed to load from storage:', error);
@@ -202,9 +282,13 @@ class BubbaOptimizer {
     }
 
     saveToStorage() {
-        localStorage.setItem('bubbaLevels', JSON.stringify(this.levels));
-        localStorage.setItem('bubbaMoney', this.availableMoney.toString());
-        localStorage.setItem('bubbaStrategy', this.strategy);
+        try {
+            localStorage.setItem('bubbaLevels', JSON.stringify(this.levels));
+            localStorage.setItem('bubbaMoney', this.availableMoney.toString());
+            localStorage.setItem('bubbaStrategy', this.strategy);
+        } catch (error) {
+            console.error('Failed to save to storage:', error);
+        }
     }
 
     setupEventListeners() {
@@ -259,16 +343,17 @@ class BubbaOptimizer {
             this.importFromJson();
         });
 
-        // Load file button
+        // Load file button - fix this
         document.getElementById('loadFileBtn').addEventListener('click', () => {
-            document.createElement('input').type = 'file'.click();
-        });
-
-        // File input change
-        document.addEventListener('change', (e) => {
-            if (e.target.type === 'file') {
-                this.loadFromFile(e.target.files[0]);
-            }
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.json';
+            fileInput.onchange = (e) => {
+                if (e.target.files.length > 0) {
+                    this.loadFromFile(e.target.files[0]);
+                }
+            };
+            fileInput.click();
         });
 
         // Clear JSON button
@@ -283,7 +368,7 @@ class BubbaOptimizer {
 
         // Save JSON button
         document.getElementById('saveJsonBtn').addEventListener('click', () => {
-            this.exportData();
+            this.downloadJson();
         });
 
         // Clear all button
@@ -351,17 +436,13 @@ class BubbaOptimizer {
         });
 
         // Buy recommendation button
-        document.addEventListener('click', (e) => {
-            if (e.target.id === 'buyRecBtn') {
-                this.buyRecommendation();
-            }
+        document.getElementById('buyRecBtn')?.addEventListener('click', () => {
+            this.buyRecommendation();
         });
 
         // Ignore recommendation button
-        document.addEventListener('click', (e) => {
-            if (e.target.id === 'ignoreRecBtn') {
-                this.ignoreRecommendation();
-            }
+        document.getElementById('ignoreRecBtn')?.addEventListener('click', () => {
+            this.ignoreRecommendation();
         });
     }
 
@@ -447,7 +528,7 @@ class BubbaOptimizer {
                     value = data.dps * (currentLevel + 1);
                     break;
                 case 'cost':
-                    value = 1 / nextCost; // Inverse cost for cheaper first
+                    value = 1 / nextCost;
                     break;
                 default:
                     value = data.dps / nextCost;
@@ -468,11 +549,11 @@ class BubbaOptimizer {
         const panel = document.getElementById('recommendationPanel');
         
         if (!upgradeName) {
-            panel.style.display = 'none';
+            if (panel) panel.style.display = 'none';
             return;
         }
         
-        panel.style.display = 'block';
+        if (panel) panel.style.display = 'block';
         
         const upgrade = this.upgrades[upgradeName];
         const currentLevel = this.levels[upgradeName];
@@ -482,21 +563,26 @@ class BubbaOptimizer {
         const affordable = nextCost <= this.availableMoney;
         
         // Update recommendation card
-        document.getElementById('recName').textContent = upgradeName;
-        document.getElementById('recCurrentLevel').textContent = `${currentLevel} / ${upgrade.maxLevel}`;
-        document.getElementById('recNextCost').textContent = nextCost.toLocaleString();
-        document.getElementById('recDpsIncrease').textContent = dpsIncrease.toFixed(4);
-        document.getElementById('recDpsPerCost').textContent = dpsPerCost.toFixed(6);
-        document.getElementById('recAffordable').textContent = affordable ? 'Yes' : 'No';
-        document.getElementById('recAffordable').style.color = affordable ? '#27ae60' : '#e74c3c';
+        if (document.getElementById('recName')) {
+            document.getElementById('recName').textContent = upgradeName;
+            document.getElementById('recCurrentLevel').textContent = `${currentLevel} / ${upgrade.maxLevel}`;
+            document.getElementById('recNextCost').textContent = nextCost.toLocaleString();
+            document.getElementById('recDpsIncrease').textContent = dpsIncrease.toFixed(4);
+            document.getElementById('recDpsPerCost').textContent = dpsPerCost.toFixed(6);
+            document.getElementById('recAffordable').textContent = affordable ? 'Yes' : 'No';
+            document.getElementById('recAffordable').style.color = affordable ? '#27ae60' : '#e74c3c';
+        }
         
         // Update DPS stats
         const newDps = this.calculateNewDps(upgradeName);
-        const dpsIncreasePercent = ((newDps - this.currentDps) / this.currentDps * 100).toFixed(2);
+        const dpsIncreasePercent = this.currentDps > 0 ? 
+            ((newDps - this.currentDps) / this.currentDps * 100).toFixed(2) : '100.00';
         
-        document.getElementById('newDps').textContent = newDps.toFixed(2);
-        document.getElementById('dpsIncrease').textContent = `${dpsIncreasePercent}%`;
-        document.getElementById('dpsIncrease').style.color = dpsIncreasePercent > 0 ? '#27ae60' : '#e74c3c';
+        if (document.getElementById('newDps')) {
+            document.getElementById('newDps').textContent = newDps.toFixed(2);
+            document.getElementById('dpsIncrease').textContent = `${dpsIncreasePercent}%`;
+            document.getElementById('dpsIncrease').style.color = parseFloat(dpsIncreasePercent) > 0 ? '#27ae60' : '#e74c3c';
+        }
     }
 
     buyRecommendation() {
@@ -648,16 +734,34 @@ class BubbaOptimizer {
 
     renderTable() {
         const tbody = document.getElementById('upgradesBody');
+        if (!tbody) {
+            console.error('Table body not found!');
+            return;
+        }
+        
         tbody.innerHTML = '';
         
         let totalLevels = 0;
         let totalSpent = 0;
         let totalDps = 0;
         
-        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-        const categoryFilter = document.getElementById('categoryFilter').value;
-        const showOnlyAffordable = document.getElementById('filterAffordable').checked;
-        const hideMaxLevel = document.getElementById('filterMaxLevel').checked;
+        const searchTerm = document.getElementById('searchInput')?.value.toLowerCase() || '';
+        const categoryFilter = document.getElementById('categoryFilter')?.value || 'all';
+        const showOnlyAffordable = document.getElementById('filterAffordable')?.checked || false;
+        const hideMaxLevel = document.getElementById('filterMaxLevel')?.checked || false;
+        
+        // If no upgrades loaded, show message
+        if (Object.keys(this.upgrades).length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="9" style="text-align: center; padding: 40px;">
+                        <h3>No upgrades loaded</h3>
+                        <p>Try reloading the page or check the console for errors.</p>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
         
         Object.entries(this.upgrades)
             .filter(([name, data]) => {
@@ -787,12 +891,16 @@ class BubbaOptimizer {
             });
         
         // Update summary
-        document.getElementById('totalLevels').textContent = totalLevels;
-        document.getElementById('totalSpent').textContent = totalSpent.toLocaleString();
-        document.getElementById('totalDps').textContent = totalDps.toFixed(2);
+        if (document.getElementById('totalLevels')) {
+            document.getElementById('totalLevels').textContent = totalLevels;
+            document.getElementById('totalSpent').textContent = totalSpent.toLocaleString();
+            document.getElementById('totalDps').textContent = totalDps.toFixed(2);
+        }
         
         // Update current DPS
-        document.getElementById('currentDps').textContent = totalDps.toFixed(2);
+        if (document.getElementById('currentDps')) {
+            document.getElementById('currentDps').textContent = totalDps.toFixed(2);
+        }
         this.currentDps = totalDps;
     }
 
@@ -808,10 +916,13 @@ class BubbaOptimizer {
         const jsonStr = JSON.stringify(data, null, 2);
         
         // Update export preview
-        document.getElementById('jsonOutput').value = jsonStr;
+        if (document.getElementById('jsonOutput')) {
+            document.getElementById('jsonOutput').value = jsonStr;
+        }
         
         // Switch to export tab
-        document.querySelector('.tab-btn[data-tab="export"]').click();
+        const exportTab = document.querySelector('.tab-btn[data-tab="export"]');
+        if (exportTab) exportTab.click();
         
         toastr.success('Data exported to JSON');
     }
@@ -823,19 +934,24 @@ class BubbaOptimizer {
             timestamp: new Date().toISOString()
         };
         
-        document.getElementById('jsonOutput').value = JSON.stringify(data, null, 2);
+        if (document.getElementById('jsonOutput')) {
+            document.getElementById('jsonOutput').value = JSON.stringify(data, null, 2);
+        }
     }
 
     importFromJson() {
-        const jsonInput = document.getElementById('jsonInput').value;
+        const jsonInput = document.getElementById('jsonInput');
+        if (!jsonInput) return;
         
-        if (!jsonInput.trim()) {
+        const jsonText = jsonInput.value;
+        
+        if (!jsonText.trim()) {
             toastr.error('Please paste JSON data first');
             return;
         }
         
         try {
-            const data = JSON.parse(jsonInput);
+            const data = JSON.parse(jsonText);
             
             if (data.levels) {
                 // Only update levels for upgrades that exist
@@ -883,42 +999,69 @@ class BubbaOptimizer {
 
     copyToClipboard() {
         const textarea = document.getElementById('jsonOutput');
+        if (!textarea) return;
+        
         textarea.select();
         document.execCommand('copy');
         
         toastr.success('Copied to clipboard!');
     }
 
+    downloadJson() {
+        const data = {
+            money: this.availableMoney,
+            levels: this.levels,
+            timestamp: new Date().toISOString()
+        };
+        
+        const jsonStr = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        
+        a.href = url;
+        a.download = `bubba-progress-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toastr.success('File downloaded!');
+    }
+
     showLoading() {
-        document.getElementById('loading').style.display = 'flex';
+        const loading = document.getElementById('loading');
+        if (loading) loading.style.display = 'flex';
     }
 
     hideLoading() {
-        document.getElementById('loading').style.display = 'none';
+        const loading = document.getElementById('loading');
+        if (loading) loading.style.display = 'none';
     }
 }
 
 // Initialize the app when page loads
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing optimizer...');
     window.bubbaOptimizer = new BubbaOptimizer();
 });
 
-// Add global helper functions
-window.resetAllLevels = function() {
-    if (window.bubbaOptimizer) {
-        window.bubbaOptimizer.levels = {};
-        Object.keys(window.bubbaOptimizer.upgrades).forEach(name => {
-            window.bubbaOptimizer.levels[name] = 0;
-        });
-        window.bubbaOptimizer.renderTable();
-        window.bubbaOptimizer.calculateDps();
-        window.bubbaOptimizer.findBestUpgrade();
-        window.bubbaOptimizer.saveToStorage();
+// Add error handling for the page
+window.addEventListener('error', (event) => {
+    console.error('Global error:', event.error);
+    
+    // Hide loading screen on error
+    const loading = document.getElementById('loading');
+    if (loading) {
+        loading.innerHTML = `
+            <div class="loading-content">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Error loading optimizer</p>
+                <p style="font-size: 0.9rem; margin-top: 10px;">Check console for details</p>
+                <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; background: #e74c3c; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    Reload Page
+                </button>
+            </div>
+        `;
     }
-};
-
-window.exportCurrentState = function() {
-    if (window.bubbaOptimizer) {
-        window.bubbaOptimizer.exportData();
-    }
-};
+});
